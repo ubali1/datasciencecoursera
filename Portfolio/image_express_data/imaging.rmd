@@ -1,0 +1,452 @@
+---
+title: "Image Express Data Analysis"
+author: "Utsav Bali"
+date: "12 September 2016"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+## Objective
+
+The objective of this exercise is to perform exploratory data analysis of the Angiogenesis data generated on the Image Express on xyz cells. Cells were incubated in triplicate with four concentrations of test compounds from Actelion at 1 nM, 10 nM, 100 nM and 1000 nM. The cells were stimulated with VEGF (4 ng/ml) and Suramin at 100 ?M was used as a positive control. 
+
+The compound test concentration codes can be identified as follows: 
+
+4 ng/ml VEGF --> 0
+100 ?M Suramin -->	5
+Compound @ 1000 nM --> 4
+Compound @ 100 nM --> 3
+Compound @ 10 nM --> 2
+Compound @ 1 nM --> 1
+
+The following variables (predictors) were evaluated as output from the Image Express data files, in order to identify the best predictor for measuring compound concentration dependent effects. 
+
+Compound"                                         
+"X1000.nM"        
+"Cell.Count..Angio.Nuc.Tub.Bas.Mb."                
+"Fibers.Count.Total..Angio.Nuc.Tub.Bas.Mb."        
+"Col4.Signal.count.Total..Angio.Nuc.Tub.Bas.Mb."   
+"Col4.positive.fibers.Total..Angio.Nuc.Tub.Bas.Mb."
+"Total.Tube.Length..Angiogenesis."                 
+"Mean.Tube.Length..Angiogenesis."                  
+"Total.Tube.Area..Angiogenesis."                    
+"Mean.Tube.Area..Angiogenesis."                    
+"Tube...Area.Covered..Angiogenesis."                
+"Average.Tube.Thickness..Angiogenesis."            
+"Segments..Angiogenesis."                           
+"Branch.Points..Angiogenesis."                     
+"Nodes..Angiogenesis."                             
+"Total.Node.Area..Angiogenesis."                   
+"Mean.Node.Area..Angiogenesis."                    
+"Node...Area.Covered..Angiogenesis."               
+"Connected.Sets..Angiogenesis."                    
+"Tube.Length.Per.Set..Angiogenesis." 
+
+There are a total of 20 variables consisting of 74 rows worth of data. The data set is small containing information for only 4 compounds: 
+
+ACT-XXX001
+ACT-XXX002
+ACT-XXX003
+ACT-XXX004 and 
+ACT-xxx005
+
+## Data source
+
+The raw data files for this project are available here:U:\Utsav Bali\Image_Express
+
+The data was manually curated to allow this analysis and saved as a csv file labeled 'Angiogenesis.csv'
+
+## Load packages
+Loading the required packages for downstream analysis...
+
+```{r}
+
+suppressWarnings(library(dplyr))
+suppressWarnings(library(ggplot2))
+suppressWarnings(library(gridExtra))
+suppressWarnings(library(grid))
+suppressWarnings(library(caret))
+suppressWarnings(library(ggfortify))
+suppressWarnings(library(randomForest))
+```
+
+##Loading data
+
+Let's read the data file as below and look at some of its attributes-
+
+```{r}
+# label the files as angiogenesis and assign all blank or NA values in the data set as NA values
+angiogenesis <- read.csv("Angiogenesis.csv", sep=",", na.strings = c("", "NA"), head = TRUE)
+dim(angiogenesis)
+str(angiogenesis)
+colnames(angiogenesis)
+```
+
+The data set consists of 76 rows and 20 columns made up mostly of numerical variables with the exception of column 1 which is a factor variable with 7 levels consisting of compound names. The dataset characterizes the properties of seven compounds, including the stimulant VEGF and the positive control Suramin. 
+The column names are, in fact, quite long and it would be of benefit for further downstream analysis to change the column names to something more intuitive, so let's change them to something simpler as below: 
+
+```{r}
+colnames(angiogenesis) <- c("compound", "concentration", "cell_count", "fiber_count", "signal_count", "positive_fiber", "total_tube_length", "mean_tube_length", "total_tube_area", "mean_tube_area", "pct_tube_area", "tube_thickness", "segments", "branch_points", "nodes", "total_node_area", "mean_node_area", "node_pct_area", "connected_sets", "tube_length_per_set")
+```
+
+The new column names are now: 
+
+```{r}
+colnames(angiogenesis)
+```
+
+Let's also create a dataset using the original data set where the duplicate values are reduced to a single mean value as follows: 
+
+```{r}
+# the data is grouped by compound firstly and then by concentration
+by_cmp_conc <- group_by(angiogenesis, compound, concentration)
+
+# a new data frame called angiogenesis_summary is created to contain the mean values for all the predictors
+angiogenesis_summary <- summarize(by_cmp_conc, mean_cell_count = mean(cell_count, na.rm = TRUE), mean_fiber_count = mean(fiber_count, na.rm = TRUE), mean_signal_count = mean(signal_count, na.rm = TRUE), mean_positive_fiber = mean(positive_fiber, na.rm = TRUE), mean_total_tube_length = mean(total_tube_length, na.rm = TRUE), mean_mean_tube_length = mean(mean_tube_length, na.rm = TRUE), mean_total_tube_area = mean(total_tube_area, na.rm = TRUE), mean_mean_tube_area = mean(mean_tube_area, na.rm = TRUE), mean_pct_tube_area = mean(pct_tube_area, na.rm = TRUE), mean_tube_thickness = mean(tube_thickness, na.rm = TRUE), mean_segments = mean(segments, na.rm = TRUE), mean_branch_points = mean(branch_points, na.rm = TRUE),mean_nodes = mean(nodes, na.rm = TRUE), mean_total_node_area = mean(total_node_area, na.rm = TRUE), mean_mean_node_area = mean(mean_node_area, na.rm = TRUE), mean_node_pct_area = mean(node_pct_area, na.rm = TRUE),mean_connected_sets = mean(connected_sets, na.rm = TRUE), mean_tube_length_per_set = mean(tube_length_per_set, na.rm = TRUE))
+```
+
+Okay, so let's take a quick look at the mean data. I've plotted below a box plot to show cell numbers as a function of compound concentration codes. We would expect a reduction in cell count as evidence of cellular toxicity.
+
+```{r}
+qplot(concentration, cell_count, data = angiogenesis, geom = c("boxplot", "jitter"), facets = .~ compound, color = concentration, main = "distribution of cell counts", xlab = "Concentration code", ylab = "cell count")
+```
+
+No significant reduction is observed in cell counts at either of the four compound concentrations tested suggesting no evidence of compound treatement having a toxic effect on these cells. Let's take another look at the same data but sorted by compound ID:
+
+```{r}
+g <- ggplot(angiogenesis, aes(concentration, cell_count))
+g <- g + geom_point(position = position_jitter(w = 0.3, h = 0), size = 3, alpha = 0.2, color = "blue")
+g <- g + facet_grid(.~ compound)
+g <- g + xlab ("concentration") + ylab ("cell count") + ylim(1100, 1600)
+g <- g + ggtitle ("distribution of cell counts (jitter plot)")
+
+# we'll plot the scatterplot data next to the mean summarized data
+g1 <- ggplot(angiogenesis_summary, aes(concentration, mean_cell_count))
+g1 <- g1 + geom_point(position = position_jitter(w = 0.3, h = 0), size = 3, alpha = 0.2, color = "blue")
+g1 <- g1 + facet_grid(.~ compound) + geom_smooth()
+g1 <- g1 + xlab ("concentration") + ylab (" mean cell count") + ylim(1100, 1600)
+g1 <- g1 + ggtitle ("distribution of mean cell counts")
+
+suppressWarnings(grid.arrange(g, g1))
+
+```
+
+The graphs of both the individual data points at each concentration (n = 3) and the mean values clearly show that there is no concentration dependent decrease in cell counts. 
+
+## Data exploration and cleanup
+
+If we take a closer look at the data...
+
+```{r}
+head(angiogenesis,20)
+```
+
+we find that a few variables contain a number of zero values. These missing values would, thus, render this variables as poor predictors of overall compound efficacy. Let's identify these predictors that contain, say, greater than 10% zero values.
+
+```{r}
+zero_values <- sapply(angiogenesis, function(x) mean(x == 0)) > 0.1
+zero_values
+```
+
+Predictors nodes, total_node_area, mean_node_area and node_pct_area have been identified as containing, at least 10% zero values. These predictors should ideally be removed from the final data set used for building the final statistical model. 
+
+Furthermore, for the purpose of identifying predictors suitable for building a predictive model, it also helps to identify variables that capture the highest variability in the data set. Let's try and calcualte the variance of these predictors manually using the data set grouped by concentration and compound
+
+```{r}
+by_cmp_conc_df <- cbind(round(sapply(by_cmp_conc[,-1], var), digits = 2), round(sapply(by_cmp_conc[,-1], mean), digits = 2))
+# and let's calculate variance as a percentage of mean to identify the predictors with the highest spread
+by_cmp_conc_df <- cbind(by_cmp_conc_df, "var as % of mean" = round((by_cmp_conc_df[,1]/by_cmp_conc_df[,2])*100))
+colnames(by_cmp_conc_df) <- c("variance", "mean", "var as % of mean")
+by_cmp_conc_df 
+```
+
+The results show that predictors "mean_tube_length", "tube_thickness", "nodes", "node_pct_area" and "connected sets" capture the least variation in the data set. Let's double check our calculation by using the following function to identify predictors with an overall variance cut off of less than 100
+
+```{r}
+low_variance <- sapply(angiogenesis, function(x) var(x)) < 100
+low_variance 
+```
+
+We can see that "mean tube length", "pct_tube_area", tube_thickness", "nodes", "node_pct_area", and "connected_sets" have been correctly identified as predictors with lowest overall variance in the angiogenesis data set and should, therefore, be removed from the final dataset used for building the predictive model
+
+Let's take a quick look at these predictors graphically to see how they vary as a function of compound concentration.
+
+```{r}
+A_plot <- qplot(concentration, mean_tube_length, data = angiogenesis, geom = "smooth", xlab = "Compound concentration code", ylab = "mean_tube_length", color = concentration, size = mean_tube_length, facets = .~ compound)
+B_plot <- qplot(concentration, pct_tube_area, data = angiogenesis, geom = "smooth", xlab = "Compound concentration code", ylab = "pct_tube_area", color = concentration, size = pct_tube_area, facets = .~ compound)
+C_plot <- qplot(concentration, tube_thickness, data = angiogenesis, geom = "smooth", xlab = "Compound concentration code", ylab = "tube_thickness", color = concentration, size = tube_thickness, facets = .~ compound)
+D_plot <- qplot(concentration, nodes, data = angiogenesis, geom = "smooth", xlab = "Compound concentration code", ylab = "node", color = concentration, size = nodes, facets = .~ compound)
+E_plot <- qplot(concentration, node_pct_area, data = angiogenesis, geom = "smooth", xlab = "Compound concentration code", ylab = "node_pct_area", color = concentration, size = node_pct_area, facets = .~ compound)
+F_plot <- qplot(concentration, connected_sets, data = angiogenesis, geom = "smooth", xlab = "Compound concentration code", ylab = "connected_sets", color = concentration, size = connected_sets, facets = .~ compound)
+
+suppressWarnings(grid.arrange(A_plot, B_plot, C_plot, D_plot, E_plot, F_plot))
+```
+
+And likewise, let's take a look at predictors with the highest variance...
+
+```{r}
+G_plot <- qplot(concentration, total_tube_length, data = angiogenesis, geom = "smooth", xlab = "Compound concentration code", ylab = "total_tube_length", color = concentration, size = total_tube_length, facets = .~ compound)
+H_plot <- qplot(concentration, total_tube_area, data = angiogenesis, geom = "smooth", xlab = "Compound concentration code", ylab = "total_tube_area", color = concentration, size = total_tube_area, facets = .~ compound)
+I_plot <- qplot(concentration, segments, data = angiogenesis, geom = "smooth", xlab = "Compound concentration code", ylab = "segments", color = concentration, size = segments, facets = .~ compound)
+J_plot <- qplot(concentration, branch_points, data = angiogenesis, geom = "smooth", xlab = "Compound concentration code", ylab = "branch_points", color = concentration, size = branch_points, facets = .~ compound)
+K_plot <- qplot(concentration, total_node_area, data = angiogenesis, geom = "smooth", xlab = "Compound concentration code", ylab = "total_node_area", color = concentration, size = total_node_area, facets = .~ compound)
+L_plot <- qplot(concentration, mean_node_area, data = angiogenesis, geom = "smooth", xlab = "Compound concentration code", ylab = "mean_node_area", color = concentration, size = mean_node_area, facets = .~ compound)
+
+suppressWarnings(grid.arrange(G_plot, H_plot, I_plot, J_plot, K_plot, L_plot))
+```
+
+It is evident that 'total_tube_length', 'total_tube_area', 'segments' and 'branc_points' show a clear trend with compound concentration. Total_node_area and 'mean_node_area' will be removed from the final data set due to low overall variance. 
+
+Certain predictors might be highly correlated with each other such that they capture essentially the same information. Including these highly correlated predictors in model building can lead to overfitting. Therefore, it is best to find and remove predictors that are correlated greater than 90%
+
+```{r}
+# the names = TRUE & verbose = TRUE argument are included
+correlation_names <- findCorrelation(abs(cor(angiogenesis[,-1])), cutoff = 0.90, names = TRUE, verbose = TRUE)
+correlation_names
+# create a new data frame angiogenesis_correlation
+angiogenesis_correlation <- angiogenesis[,correlation_names]
+# create scatter plots of these predictors
+pairs(angiogenesis_correlation, main = "Simple Scatterplot Matrix")
+```
+
+Let's examine the correlation coefficients for these predictors...
+```{r}
+cor(angiogenesis_correlation)
+```
+
+So what do the remainder of the predictors look like and what does their correlation look like?
+```{r}
+correlation_index <- findCorrelation(abs(cor(angiogenesis[,-1])), cutoff = 0.90)
+correlation_index <- correlation_index + 1
+nocorrelation_names <- names(angiogenesis)[-correlation_index]
+# remove the first, second and the node and the node % area predictors
+nocorrelation_names <- nocorrelation_names[-c(1,2, 9, 11)]
+# create a new data frame angiogenesis_nocorrelation
+angiogenesis_nocorrelation <- angiogenesis[,nocorrelation_names]
+pairs(angiogenesis_nocorrelation, main = "Simple Scatterplot Matrix of non correlated predictors")
+```
+
+So what do the correlation coefficients look like for these non correlated predictors...
+```{r}
+# the correlation coefficients for the non highly correlated predictors
+cor(angiogenesis_nocorrelation)
+```
+
+We can see that these are no highly correlated predictors in this data subset. So what we can do now is to create a new data set that contains our refined list of predictors which excludes the predictors that either contain 
+
+zero values
+total_node_area (16)
+mean_node-area (17)
+nodes (15)
+node_pct_area (18)
+
+low variance
+
+connected sets (19)
+mean_tube_length (8)
+pct_tube_area (11)
+tube_thickness (12)
+nodes (15)
+node_pct_area (18)
+
+Highly correlated
+
+total_tube_length (7)
+fiber_count (4)
+positive_fiber (6)
+total_tube_area (9)
+pct_tube_area (11)
+segments (13)
+total_node_area (16)
+
+corresponding to indexes - 4, 6, 7, 8, 9, 11, 12, 13, 15, 16, 17, 18, 19
+
+So we'll include the following indexes - 
+
+c(1, 2, 3, 5, 10, 14, 20)
+
+compound, concentration, cell_count, signal_count, mean_tube_area, branch_points, tube_length_per_set
+
+
+```{r}
+angiogenesis_final <- subset(angiogenesis)[,c(1,2,7,9,13,14)]
+# let's group the data by compound and concentraton
+angiogenesis_final_grouped <- group_by(angiogenesis_final, compound, concentration)
+# and then let's calculate the mean values for each predictor
+angiogenesis_final_grouped_summary <- summarize(angiogenesis_final_grouped, mean_total_tube_length = mean(total_tube_length, na.rm = TRUE), mean_total_tube_area = mean(total_tube_area, na.rm = TRUE), mean_segments = mean(segments, na.rm = TRUE), mean_branch_points = mean(branch_points, na.rm = TRUE))
+```
+
+So, now let's take a look at these predictors with their mean values
+
+```{r}
+M_plot <- qplot(concentration, mean_total_tube_length, data = angiogenesis_final_grouped_summary, geom = c("point", "smooth"), xlab = "Compound concentration code", ylab = "mean_total_tube_length", color = concentration, size = mean_total_tube_length, facets = .~ compound)
+N_plot <- qplot(concentration, mean_total_tube_area, data = angiogenesis_final_grouped_summary, geom = c("point", "smooth"), xlab = "Compound concentration code", ylab = "mean_total_tube_area", color = concentration, size = mean_total_tube_area, facets = .~ compound)
+O_plot <- qplot(concentration, mean_segments, data = angiogenesis_final_grouped_summary, geom = c("point", "smooth"), xlab = "Compound concentration code", ylab = "mean_segments", color = concentration, size = mean_segments, facets = .~ compound)
+P_plot <- qplot(concentration, mean_branch_points, data = angiogenesis_final_grouped_summary, geom = c("point", "smooth"), xlab = "Compound concentration code", ylab = "mean_branch_points", color = concentration, size = mean_branch_points, facets = .~ compound)
+
+suppressWarnings(grid.arrange(M_plot, N_plot, O_plot, P_plot))
+```
+
+It becomes apparent that ACT01, ACT03 and ACT05 give a steady response to compound concentration, whereas ACT02 and ACT04 do not.The best response window can be achieved by examining the following predictors - 'total_tube_length', 'total_tube_area' and 'mean_segments'. The response window with 'branch_points' is not as good as the other three predictors. 
+
+## Model Building 
+
+# Data Partitioning into training and testing data sets
+
+Let's create a data partition using the preprocessed data frame "angiogenesis_final" which contains the final list of predictors as determined from our analysis above.
+
+
+```{r}
+set.seed(123)
+train_partition <- createDataPartition(y = angiogenesis_final$concentration, p = 0.8, list = FALSE)
+train <- angiogenesis_final[train_partition, ]
+test <- angiogenesis_final[-train_partition, ]
+```
+
+
+# Linear Model regression
+
+Let's try and create a linear model regressed against all of the predictors in the data set
+
+```{r}
+cross_validation <- trainControl(method = "cv", number=3, repeats=3)
+# prediction of test data using 'lm'
+lm_model <- train(concentration ~., data = train, trControl = cross_validation, method = 'lm')
+```
+
+Let's examine the model...
+
+```{r}
+summary(lm_model)
+```
+
+Let's use the lm model to predict the test data set
+
+```{r}
+lm_prediction <- predict(lm_model, newdata = test)
+lm_prediction_values <- as.integer(lm_prediction)
+suppressWarnings(lm_confusion_matrix <- confusionMatrix(lm_prediction_values, test$concentration))
+lm_confusion_matrix
+
+rbind(lm_prediction_values, test$concentration)
+```
+
+We can see that the linear model predictions 7 out of 14 answers accurately - an accuracy of-
+```{r}
+lm_confusion_matrix$overall[1]
+```
+
+The RMSE and RMSD values are: 
+
+```{r}
+cbind(lm_model$results[2], lm_model$results[3], lm_model$results[4], lm_model$results[5])
+```
+
+Let's plot the linear model
+
+```{r}
+par(mfrow = c(2, 2))
+plot(lm_model$finalModel,pch=19,cex=0.5,col="#00000010")
+```
+
+As we can see, the model predicts with only 50% accuracy the expected compound concentration which is quite poor and no different from random guessing. This is a bit surprising as the final predictors appear to have a very good linear correlation. 
+
+# Generalized Linear Model using preprocessed predictors using Principal Component Analysis
+
+Let's examine the mean and the standard deviation for the final data set and the 4 predictors
+
+```{r}
+pairs(train[,-c(1,2)])
+cbind(mean = sapply(train[,-c(1,2)], mean), sd = sapply(train[,-c(1,2)], sd))
+```
+
+We can see that the standard deviation varies quite a bit between the four variables by as much as 40-fold. Running a PCA on this data set would inevitably identify the variable with the highest standard deviation (total_tube_area) as the first principal component. To remedy this, we shall scale the data set (center around mean and normalize to sd) first as follows:
+
+```{r}
+train_scaled <- as.data.frame(scale(train[3:6]))
+cbind(mean = sapply(train_scaled, mean), sd = sapply(train_scaled, sd))
+```
+
+We can see that the mean of the variables is near zero and all the standard deviations are now 1. Let's create a data frame containing only the scaled data for the purposes of building a glm model.
+
+```{r}
+train_scaled <- mutate(train, scale_total_tube_length = scale(train[3]), scale_total_tube_area = scale(train[4]), scale_segments = scale(train[5]), scale_branch_points = scale(train[6]))
+train_scaled <- select(train_scaled, concentration, scale_total_tube_length, scale_total_tube_area, scale_segments, scale_branch_points)
+head(train_scaled, 10)
+```
+
+Let's apply the same transformation to the test data set as follows:
+
+```{r}
+test_scaled <- mutate(test, scale_total_tube_length = scale(test[4]), scale_total_tube_area = scale(test[4]), scale_segments = scale(test[5]), scale_branch_points = scale(test[6]))
+test_scaled <- select(test_scaled, concentration, scale_total_tube_length, scale_total_tube_area, scale_segments, scale_branch_points)
+head(test_scaled, 10)
+```
+
+So now, let's train the data set using principal component analysis on the scaled training data set. Firstly, let's create a principal component dataframe of the train[,-1] data set: 
+
+```{r}
+# create pc analysis
+pc <- prcomp(train_scaled[,-1])
+#plot variances of pc
+plot(pc, type = "l")
+```
+
+We can see from the plot that the bulk of the variation in the data set can actualy be captured by the first two PCs. Let's take a closer look at the variances.
+
+```{r}
+#let's look at the standard deviations of the principal components
+pc$sdev
+```
+
+The percentage of total variation captured by the first three PCs is: 
+
+```{r}
+(pc$sdev[1]+pc$sdev[2]+pc$sdev[3])/sum(pc$sdev)
+```
+
+So, let's plot the principal components for visualation:
+
+```{r}
+#plot the first two principal components using the ggfortify package
+autoplot(pc, data = train_scaled[,-1], color = 'concentration', label = TRUE, label.size = 3, loadings = TRUE, loadings.colour = 'blue', loadings.label = TRUE, loadings.label.size = 3)
+```
+
+The first two principal components cover 99.4% of the overall variation. We can now build a training model using the pca and glm :
+
+```{r}
+# preprocess the train[,-1] data using pca (data is centered and scaled in this method) on the caret package
+preProc <-preProcess(train[,-1], method="pca", pcaComp = 5)
+trainPC <-predict(preProc,train[,-1])
+# train the trainPC data using glm with cross validation
+modelFit <-train(train$concentration ~., trControl = cross_validation, method="glm", data = trainPC)
+# create principal components for the test dataset
+testPC <-predict(preProc,test[,-1])
+```
+
+Let's see what the accuracy of our glm model on the principal components is: 
+
+```{r}
+# predict the testPC data using glm with cross validation and print a confusion matrix of the prediction
+glm_confusion_matrix <- confusionMatrix(as.integer(predict(modelFit,testPC)), test$concentration)
+glm_confusion_matrix
+rbind(as.integer(predict(modelFit,testPC)), test$concentration)
+```
+
+The data shows 
+```{r}
+glm_confusion_matrix$overall[1]
+```
+85.7 % accuracy predicting 12 out of 14 correctly. 
+
+## Conclusions
+
+We have reduced the data set to identify the appropriate predictors for measuring compound potency, this limited data set was used to develop a statistical model using principal components in order to predict compound potency of unknown compounds based on their effect as measured on the final set of predictors. 
+A similar exercise can be conducted to deconvolute a phenotypic screen or predict a mechanism of action based on data derived from an appropriate training set. 
+
+
+
